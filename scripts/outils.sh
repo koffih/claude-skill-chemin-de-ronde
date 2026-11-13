@@ -71,7 +71,7 @@ run_lynis() {
   [ -s "$OUT/lynis-report.dat" ] || { f X-LYNIS skip info tools "Lynis produced no report" "see lynis.txt"; return; }
   local hi; hi=$(awk -F= '$1=="hardening_index"{print $2}' "$OUT/lynis-report.dat")
   local nw ns; nw=$(grep -c '^warning\[\]=' "$OUT/lynis-report.dat"); ns=$(grep -c '^suggestion\[\]=' "$OUT/lynis-report.dat")
-  f X-LYNIS info info tools "Lynis hardening index (0-100, a trend to follow, not a goal)" "index=$hi warnings=$nw suggestions=$ns version=$("$L" show version 2>/dev/null)"
+  f X-LYNIS info info tools "Lynis hardening index (0-100, a trend to follow, not a goal)" "index=$hi warnings=$nw suggestions=$ns version=$(cd "$d" && "$L" show version 2>/dev/null | head -1)"
   grep '^warning\[\]=' "$OUT/lynis-report.dat" | cut -d= -f2- | while IFS='|' read -r code text _; do
     f "L-$code" fail medium tools "Lynis warning: $text" "lynis show details $code"
   done
@@ -97,17 +97,18 @@ summarize_trivy() { # file id label
   [ -s "$1" ] || { f "$2" skip info tools "Trivy scan of $3 failed" "see trivy.txt"; return; }
   local s; s=$(python3 -I - "$1" <<'PY'
 import json,sys,collections
-d=json.load(open(sys.argv[1])); c=collections.Counter(); pk=collections.Counter()
+# Count distinct CVEs, not occurrences: one Go stdlib CVE embedded in 40 binaries is one fix.
+d=json.load(open(sys.argv[1])); ids={"CRITICAL":set(),"HIGH":set()}; pk=collections.defaultdict(set)
 for r in d.get("Results") or []:
     for v in r.get("Vulnerabilities") or []:
-        c[v["Severity"]]+=1; pk[v["PkgName"]]+=1
-top=" ".join(f"{p}({n})" for p,n in pk.most_common(6))
-print(c["CRITICAL"], c["HIGH"], top)
+        ids.setdefault(v["Severity"],set()).add(v["VulnerabilityID"]); pk[v["PkgName"]].add(v["VulnerabilityID"])
+top=" ".join(f"{p}({len(n)})" for p,n in sorted(pk.items(), key=lambda x:-len(x[1]))[:6])
+print(len(ids["CRITICAL"]), len(ids["HIGH"]), top)
 PY
 )
   local cr hi top; read -r cr hi top <<<"$s"
-  if [ "${cr:-0}" -gt 0 ]; then f "$2" fail high tools "Trivy: fixable critical vulnerabilities in $3" "critical=$cr high=$hi, packages: $top"
-  elif [ "${hi:-0}" -gt 0 ]; then f "$2" fail medium tools "Trivy: fixable high vulnerabilities in $3" "high=$hi, packages: $top"
+  if [ "${cr:-0}" -gt 0 ]; then f "$2" fail high tools "Trivy: fixable critical vulnerabilities in $3" "distinct CVEs: critical=$cr high=$hi; packages (CVEs): $top"
+  elif [ "${hi:-0}" -gt 0 ]; then f "$2" fail medium tools "Trivy: fixable high vulnerabilities in $3" "distinct CVEs: high=$hi; packages (CVEs): $top"
   else f "$2" pass info tools "Trivy: no fixable high or critical vulnerability in $3" ""; fi
 }
 

@@ -9,7 +9,7 @@ looks everywhere, touches nothing, and reports what is cracked.
 
 - **Never changes the server.** No setting, restart or system package; a test
   bench proves that no file, mode or owner changes during a round.
-- **Nine towers, 40 native checks** chosen from real audits of small fleets:
+- **Nine towers, about 40 native checks** chosen from real audits of small fleets:
   SSH and accounts, exposed databases and consoles, Docker ports that bypass
   UFW, secrets in clear (files, units, crontabs, histories), root jobs that
   another account can modify, `curl | bash` as root, patches, kernel, backups.

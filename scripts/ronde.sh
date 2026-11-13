@@ -236,6 +236,15 @@ tower_patches() {
   fi
   if [ -f /var/run/reboot-required ]; then f P03 warn medium $T "a reboot is required to finish updates (new kernel or libraries not loaded)" "$(head -c 200 /var/run/reboot-required.pkgs 2>/dev/null | paste -sd' ' -)"
   else f P03 pass info $T "no reboot pending" ""; fi
+  if have dpkg-query; then
+    local run old
+    run=$(uname -r | sed -E 's/-[a-z]+$//')
+    old=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'linux-image-[0-9]*' 'linux-modules-[0-9]*' 2>/dev/null \
+          | awk '$1 ~ /^ii/ {print $2}' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+' | sort -uV | grep -vx "$run")
+    local n; n=$(grep -c . <<<"$old")
+    if [ "$n" -gt 1 ]; then f P05 warn medium $T "old kernels still installed (their known flaws count in every vulnerability scan, and they fill /boot)" "running $run; also installed: $(paste -sd' ' - <<<"$old")"
+    else f P05 pass info $T "at most one fallback kernel installed" "running $run"; fi
+  fi
   . /etc/os-release 2>/dev/null
   local eol=no
   case "${ID:-}" in
