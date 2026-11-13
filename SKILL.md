@@ -42,7 +42,7 @@ State and history: `/var/lib/chemin-de-ronde` as root (mode 700), else `~/.local
    - the first five actions, ordered by risk removed for effort spent, each with its fix and a mark when it **touches access**;
    - what was not checked (skipped checks, no external scan) so the score is not read as more than it is.
    If the server holds or will hold sensitive personal data (identity documents, health, payment), add the review from [references/sensitive-data.md](references/sensitive-data.md): a hardened server is necessary, not sufficient.
-7. **Hand over the fixes.** This skill stops at the recommendation. Applying is a separate, explicit request, done one change at a time with a rollback, following [references/fixes.md](references/fixes.md).
+7. **Hand over the fixes.** This skill stops at the recommendation. Applying is a separate, explicit request, done one change at a time with a rollback, following [references/fixes.md](references/fixes.md). Log each applied fix in the server's journal (format at the end of fixes.md), then run the round again to see it move to fixed.
 
 ## Many servers
 

@@ -73,6 +73,8 @@ Each check of the round, why it matters, how to fix it, and how to prove the fix
 |---|---|---|
 | C01 | `curl ... \| bash` as root on a schedule gives root to whoever controls that URL or that repository, on every server that runs it. | Clone at a pinned commit or verify a checksum, and run it as the account that needs it, not root. |
 | C02 | If root runs a file another account can modify, that account is root: it edits the file and waits. | `chown root:root` and `chmod 755` the file and every parent folder, or run the job as the owning account (`User=` in the unit, the user's crontab). |
+
+**C02 when the scripts live in a user's git repo** (the usual case): chowning the files is not enough, the user still owns the folder and can replace them. Install a root-owned copy (`install -o root -g root -m 755 bin/*.sh /usr/local/lib/<app>/bin/`) and point the unit at it with a drop-in (`/etc/systemd/system/<unit>.service.d/override.conf`: `[Service]`, an empty `ExecStart=`, then the new `ExecStart=`). Keep the install in a script in the repo, and make the job's health probe compare the repo with the copy: otherwise an edit in the repo silently never reaches the nightly run.
 | C03 | Same, one level up: whoever writes a unit, a cron file or sudoers decides what root runs. | `chown root:root`, `chmod 644` (units, cron) or `440` (sudoers). Find out how it became writable. |
 | C04 | A setuid program outside system folders is a ready-made privilege escalation. | Identify its origin; `chmod u-s` unless a known package needs it. |
 | C05 | A world-writable system file can be replaced by anyone. | `chmod o-w`, find which install did it. |
@@ -108,3 +110,19 @@ Each check of the round, why it matters, how to fix it, and how to prove the fix
 | X-LYNIS / L-xxxx | `lynis show details <code>` gives the test and its advice. The hardening index is a trend to follow on one server, not a target. |
 | T-ROOTFS | `apt upgrade` for system packages; language packages are updated in their project and redeployed. |
 | T-IMGn | Rebuild the image on an updated base and redeploy. |
+
+## Keep a journal of applied fixes
+
+One file per server (in your notes or wiki, not on the server only), one entry per fix applied:
+
+```
+## <date> <server> <ID> <one line>
+- Finding: what the round said, and what was really there.
+- Change: the exact files and commands.
+- Rollback: the command that undoes it.
+- Proof: the round's line before and after, plus any test of the service itself.
+- Trap: what was not obvious (it is what helps on the next server).
+```
+
+The next round confirms it on its own (the finding moves to "fixed"); the journal says how, so the same fix on another server takes minutes.
+
