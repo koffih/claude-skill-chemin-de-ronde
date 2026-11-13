@@ -316,10 +316,23 @@ tower_supply() {
   needroot C01 $T "root jobs" || return
   local cronsrc; cronsrc=$( { cat /etc/crontab /etc/cron.d/* 2>/dev/null | grep -vE '^\s*#' | awk 'NF>6 && $6=="root"{ $1=$2=$3=$4=$5=$6=""; print }';
      cat /var/spool/cron/crontabs/root 2>/dev/null | grep -vE '^\s*(#|$)' | awk '{ if ($1 ~ /^@/) {$1=""} else {$1=$2=$3=$4=$5=""}; print }'; } )
-  local unitexec; unitexec=$(grep -hE '^\s*Exec(Start|StartPre|StartPost|Reload)=' /etc/systemd/system/*.service /etc/systemd/system/*/*.conf 2>/dev/null | sed -E 's/^\s*Exec[A-Za-z]*=[-@+!:]*//')
-  # units whose User= is not root are excluded from the root-exec check
-  local rootunits=""; for u in /etc/systemd/system/*.service; do [ -f "$u" ] || continue; grep -qE '^\s*User=' "$u" && ! grep -qE '^\s*User=(root|0)\s*$' "$u" && continue; rootunits="$rootunits $u"; done
-  local rootexec; rootexec=$(for u in $rootunits; do grep -hE '^\s*Exec(Start|StartPre|StartPost)=' "$u" | sed -E 's/^\s*Exec[A-Za-z]*=[-@+!:]*//'; done)
+  # Exec lines of the units that run as root. With systemd running, read the
+  # effective configuration (drop-ins included: they can reset ExecStart= or set
+  # User=); without it (container, chroot), fall back to the unit files.
+  local rootexec="" u n usr
+  for u in /etc/systemd/system/*.service; do
+    [ -f "$u" ] || continue
+    if [ -d /run/systemd/system ]; then
+      n=$(basename "$u"); usr=$(systemctl show -p User --value "$n" 2>/dev/null)
+      [ -n "$usr" ] && [ "$usr" != root ] && [ "$usr" != 0 ] && continue
+      rootexec="$rootexec
+$(systemctl show -p ExecStart -p ExecStartPre -p ExecStartPost "$n" 2>/dev/null | grep -oE 'argv\[\]=[^;]*' | sed -E 's/^argv\[\]=//')"
+    else
+      grep -qE '^\s*User=' "$u" && ! grep -qE '^\s*User=(root|0)\s*$' "$u" && continue
+      rootexec="$rootexec
+$(grep -hE '^\s*Exec(Start|StartPre|StartPost)=' "$u" | sed -E 's/^\s*Exec[A-Za-z]*=[-@+!:]*//')"
+    fi
+  done
 
   local pipe; pipe=$(grep -E '(curl|wget)[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b' <<<"$cronsrc
 $rootexec" | head -3)
