@@ -123,14 +123,34 @@ tower_walls() {
   fi
 
   have ss || { f W02 skip info $T "listening ports" "ss not found"; return; }
-  local lines; lines=$(ss -tulnH 2>/dev/null | awk '{print $1"|"$5}')
+  local lines; lines=$(ss -tulnpH 2>/dev/null | awk '{d=($0 ~ /docker-proxy/)?"d":"-"; print $1"|"$5"|"d}')
+  # What really filters before a listener. raw PREROUTING drops come first of all;
+  # DOCKER-USER drops apply to ports published by Docker (DNAT, IPv4); and Tailscale
+  # accepts everything on tailscale0 in ts-input, ahead of UFW.
+  local RAWDROP RAWTS EDGE=0 TSUP=0 ext="" i dur
+  RAWDROP=" $( { iptables -t raw -S PREROUTING; ip6tables -t raw -S PREROUTING; } 2>/dev/null | grep -E -- '-j (DROP|REJECT)' | grep -v -- ' -i ' | grep -oE -- '--dport [0-9]+' | awk '{print $2}' | sort -u | paste -sd' ' -) "
+  RAWTS=" $( { iptables -t raw -S PREROUTING; ip6tables -t raw -S PREROUTING; } 2>/dev/null | grep -E -- '-i tailscale0 .*-j (DROP|REJECT)' | grep -oE -- '--dport [0-9]+' | awk '{print $2}' | sort -u | paste -sd' ' -) "
+  have ip && ip -o link show up 2>/dev/null | grep -q ' tailscale0:' && TSUP=1
+  if have ip && have iptables; then
+    dur=$(iptables -S DOCKER-USER 2>/dev/null | grep -E -- '^-A DOCKER-USER -i [^ ]+ (-m conntrack --ctstate NEW )?-j (DROP|REJECT)$' | awk '{print $4}')
+    ext=$(ip -o link show up 2>/dev/null | awk -F': ' '{sub(/@.*/,"",$2); print $2}' | grep -vE '^(lo|docker|br-|veth|cni|flannel|virbr|lxdbr|tailscale)')
+    if [ -n "$ext" ] && [ -n "$dur" ]; then
+      EDGE=1
+      for i in $ext; do
+        local hit=0 r
+        for r in $dur; do case "$r" in *+) [[ "$i" == "${r%+}"* ]] && hit=1 ;; *) [ "$i" = "$r" ] && hit=1 ;; esac; done
+        [ $hit = 1 ] || EDGE=0
+      done
+    fi
+  fi
+  local tn=""
   # addresses of container bridges: only containers on this host reach them
   local BRIDGE=" "; have ip && BRIDGE=" $(ip -o addr show 2>/dev/null | awk '$2 ~ /^(docker|br-|veth|cni|flannel|virbr|lxdbr)/ {split($4,a,"/"); print a[1]; if ($5=="brd") print $6}' | paste -sd' ' -) " 
   local crit="" hi="" other="" lan=""
   # db, cache, search, container API, admin consoles, dev servers
   local CRIT_PORTS=" 2375 2376 3306 33060 5432 6543 6379 27017 27018 9200 9300 11211 5984 8086 9042 1433 1521 5433 54322 "
   local HIGH_PORTS=" 8000 8443 9000 9443 54323 5173 5174 4200 8888 15672 5601 3001 8081 10000 "
-  while IFS='|' read -r proto addr; do
+  while IFS='|' read -r proto addr dp; do
     [ -n "$addr" ] || continue
     local port=${addr##*:} ip=${addr%:*}
     ip=${ip%%%*}; ip=${ip#[}; ip=${ip%]}
@@ -143,9 +163,16 @@ tower_walls() {
       100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*) scope=tailnet ;;
       *) scope=all ;;
     esac
-    [ "$scope" = tailnet ] && continue
     [[ "$BRIDGE" == *" $ip "* ]] && continue
     local tag="$proto/$port"
+    [[ "$RAWDROP" == *" $port "* ]] && continue
+    # published by Docker while DOCKER-USER drops every external interface, with a
+    # default-deny firewall for the IPv6 the proxy serves: only the tailnet is left
+    [ "$scope" = all ] && [ "$dp" = d ] && [ "$EDGE" = 1 ] && [ "$FW" != none ] && scope=tailnet
+    if [ "$scope" = tailnet ]; then
+      [ "$TSUP" = 1 ] && [[ "$RAWTS" != *" $port "* ]] && { [[ "$CRIT_PORTS$HIGH_PORTS" == *" $port "* ]] && tn="$tn $tag"; }
+      continue
+    fi
     if [ "$scope" = lan ]; then lan="$lan $tag@$ip"; continue; fi
     if [[ "$CRIT_PORTS" == *" $port "* ]]; then crit="$crit $tag"
     elif [[ "$HIGH_PORTS" == *" $port "* ]]; then hi="$hi $tag"
@@ -161,10 +188,13 @@ tower_walls() {
   if [ -n "$other" ]; then f W04 warn medium $T "other ports listening on every interface (expected: 22, 80, 443)" "$other$note"
   else f W04 pass info $T "only 22, 80 and 443 listen publicly" ""; fi
   [ -n "$lan" ] && f W05 warn low $T "services bound to a local-network address (reachable by every device on that network)" "$lan"
+  tn=$(tr ' ' '\n' <<<"$tn" | sort -u | paste -sd' ' -)
+  [ -n "$tn" ] && f W09 warn medium $T "database or admin console reachable from every device of the tailnet (Tailscale accepts tailscale0 before UFW)" "$tn"
 
   if have docker && docker info >/dev/null 2>&1; then
     local pub; pub=$(docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -E '(0\.0\.0\.0|\[::\]|:::):[0-9]' | awk '{print $1}' | paste -sd' ' -)
-    if [ -n "$pub" ]; then f W06 fail high $T "containers publish ports on 0.0.0.0, which bypasses UFW" "$pub"
+    if [ -n "$pub" ] && [ "$EDGE" = 1 ]; then f W06 pass info $T "containers publish on 0.0.0.0, but DOCKER-USER drops new connections from every external interface" "$pub"
+    elif [ -n "$pub" ]; then f W06 fail high $T "containers publish ports on 0.0.0.0, which bypasses UFW" "$pub"
     else f W06 pass info $T "no container publishes on 0.0.0.0" ""; fi
   fi
 

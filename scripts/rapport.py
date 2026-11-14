@@ -32,6 +32,7 @@ FIX = {
     "W06": "Publish container ports as 127.0.0.1:PORT:PORT in compose files, or filter the DOCKER-USER chain: UFW does not see Docker NAT.",
     "W07": "Add a default nginx server that returns 444 for unknown hosts on 80 and 443.",
     "W08": "Check the certbot timer and its last log; renew by hand once and fix the cause.",
+    "W09": "Close the port to the tailnet in the raw table (iptables and ip6tables -t raw -I PREROUTING -i tailscale0 -p tcp --dport PORT -j DROP, made persistent by a oneshot unit), or use Tailscale ACLs; a UFW rule on tailscale0 has no effect.",
     "G01": "Install CrowdSec (behavioural, shared blocklists) or fail2ban with an sshd jail.",
     "G02": "Install auditd with rules on identity files, sudoers, SSH and cron.",
     "G03": "Add Falco or Wazuh (central alerts), or at least AIDE for file integrity.",

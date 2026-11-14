@@ -37,6 +37,7 @@ Each check of the round, why it matters, how to fix it, and how to prove the fix
 | W06 | Docker writes its own NAT rules before UFW: a port published as `5432:5432` is public even when UFW says deny. | In compose: `"127.0.0.1:5432:5432"`. Or filter in the `DOCKER-USER` chain. Recreate the container. | `docker ps`; external `nmap`. |
 | W07 | Scanners find sites by IP; a default site leaks the stack and old apps. | A default nginx server: `listen 80 default_server; listen 443 ssl default_server; ssl_reject_handshake on; return 444;` | `curl -k https://<ip>` gives nothing. |
 | W08 | An expired certificate breaks the site and teaches users to click through warnings. | `systemctl list-timers \| grep certbot`, `certbot renew --dry-run`, fix the cause. | the next round |
+| W09 | Every device of the tailnet (laptops, phones, other servers and their agents) reaches the port; a local Supabase answers to its default password. Tailscale accepts all traffic on `tailscale0` in its own `ts-input` chain, ahead of UFW, so a UFW rule there does nothing. | Drop it in the raw table, which runs before Tailscale, UFW and Docker: `iptables -t raw -I PREROUTING -i tailscale0 -p tcp --dport <port> -j DROP` and the same with `ip6tables`, from a oneshot systemd unit so it survives reboots. Or restrict it with Tailscale ACLs. | from another tailnet device: `bash -c '</dev/tcp/<tailnet-ip>/<port>'` fails, v4 and v6. |
 
 ## watch
 
