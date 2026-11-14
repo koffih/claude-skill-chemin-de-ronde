@@ -293,7 +293,23 @@ tower_secrets() {
   local wr; wr=$(find $ROOTS_OK -xdev \( "${PRUNE[@]}" \) -prune -o -type f \( -name '.env' -o -name '.env.*' -o -name '*.pem' -o -name '*.key' -o -name 'id_rsa' -o -name 'id_ed25519' -o -name 'id_ecdsa' -o -name '*.p12' -o -name '*.pfx' -o -name 'credentials.json' -o -name '.pgpass' \) \
      -perm -o+r ! -name '*.example' ! -name '*.sample' ! -name '*.template' ! -name '*.dist' ! -name '*.exemple' ! -name '*.pub' ! -path '*/fixtures/*' ! -path '*/test/*' ! -path '*/tests/*' -print 2>/dev/null \
      | while read -r x; do case "$x" in *.pem|*.key) grep -qs 'PRIVATE KEY' "$x" && echo "$x" ;; *) echo "$x" ;; esac; done | head -50)
-  if [ -n "$wr" ]; then f K01 fail high $T "secret files readable by every account" "$(wc -l <<<"$wr") files: $(head -5 <<<"$wr" | paste -sd' ' -)"
+  # A world-readable file behind a folder others cannot enter (a home in 750) is
+  # not readable by them today: report it lower, as one chmod away from a leak.
+  local reach="" shut="" x d ok
+  while read -r x; do
+    [ -n "$x" ] || continue
+    d=$(dirname "$x"); ok=1
+    while [ "$d" != / ] && [ -n "$d" ]; do
+      [ "$(( 0$(stat -c '%a' "$d" 2>/dev/null) % 2 ))" = 1 ] || { ok=0; break; }
+      d=$(dirname "$d")
+    done
+    if [ $ok = 1 ]; then reach="$reach
+$x"; else shut="$shut
+$x"; fi
+  done <<<"$wr"
+  reach=$(sed '/^$/d' <<<"$reach"); shut=$(sed '/^$/d' <<<"$shut")
+  if [ -n "$reach" ]; then f K01 fail high $T "secret files readable by every account" "$(wc -l <<<"$reach") files: $(head -5 <<<"$reach" | paste -sd' ' -)"
+  elif [ -n "$shut" ]; then f K01 warn low $T "secret files world-readable, but behind a folder other accounts cannot enter" "$(wc -l <<<"$shut") files: $(head -5 <<<"$shut" | paste -sd' ' -)"
   else f K01 pass info $T "no secret file readable by every account" "under$ROOTS_OK"; fi
 
   local named; named=$(find $ROOTS_OK -xdev \( "${PRUNE[@]}" \) -prune -o -type f \( -iname '*credential*' -o -iname '*secret*' -o -iname '*password*' -o -iname '*passwd*' -o -iname '*identifiant*' -o -iname '*mot*de*passe*' \) \
