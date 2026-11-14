@@ -55,7 +55,7 @@ Each check of the round, why it matters, how to fix it, and how to prove the fix
 | P01 | Most break-ins use flaws patched weeks earlier. | `apt install unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades`. |
 | P02 | Same. | `apt update && apt upgrade` at a quiet hour; check services after. |
 | P03 | A patched kernel or libc is not in effect until the reboot. | Reboot at a quiet hour, after checking that every service is enabled to start on its own (`systemctl is-enabled`, containers with `restart: unless-stopped`). |
-| P05 | Old kernels are never booted but stay on disk; every vulnerability scan counts their flaws, and they fill `/boot` until an update fails. | `apt autoremove --purge` keeps the running kernel and one fallback. Reboot first if a newer kernel is pending (P03). |
+| P05 | Old kernels are never booted but stay on disk; every vulnerability scan counts their flaws, and they fill `/boot` until an update fails. | Reboot first if a newer kernel is pending (P03). Keep the running kernel and one fallback, and purge the older ones by name: list them with `dpkg -l | grep <version>` (image, modules, headers, and any GPU module package built for that kernel), simulate with `apt-get -s purge ...`, then purge. Do not rely on `apt autoremove`: it often keeps recent kernels and can remove other packages at the same time (GPU firmware on NVIDIA hosts). |
 | P04 | No more security updates at all. | Plan the release upgrade on a copy of the server first. |
 
 ## secrets

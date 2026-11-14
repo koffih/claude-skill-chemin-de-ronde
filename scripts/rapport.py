@@ -40,7 +40,7 @@ FIX = {
     "P01": "apt install unattended-upgrades and enable it (dpkg-reconfigure -plow unattended-upgrades).",
     "P02": "apt update && apt upgrade during a quiet hour, then check the services.",
     "P03": "Reboot during a quiet hour, after checking every service restarts on its own.",
-    "P05": "apt autoremove --purge (keeps the running kernel and one fallback), after checking the running kernel boots by default.",
+    "P05": "Keep the running kernel and one fallback; purge the older ones by name (apt-get -s purge linux-image-<v>-generic linux-modules-<v>-generic linux-headers-<v>-generic ... first, to see exactly what goes). apt autoremove often keeps them and may remove other packages, such as GPU firmware.",
     "P04": "Plan the move to a supported release (do-release-upgrade on a copy first).",
     "K01": "chmod 600 each file (owner only); if the file was ever world-readable on a shared host, rotate what it holds.",
     "K02": "Move the content to a password manager or an encrypted file (sops, age), delete the plain copy, rotate if it left the box.",
