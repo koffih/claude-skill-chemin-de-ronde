@@ -114,14 +114,27 @@ PY
 
 run_gitleaks() {
   local G; G=$(tool_path gitleaks) || { f X-GITLEAKS skip info tools "Gitleaks not installed" "outils.sh install gitleaks"; return; }
-  local n=0 r
+  local n=0 r rc missed=""
   : >"$OUT/gitleaks-summary.txt"
+  # Caches and dependencies hold vendored test keys by the hundred and take most
+  # of the time; the allowlist makes Gitleaks skip them without reading them.
+  cat >"$OUT/gitleaks.toml" <<'TOML'
+[extend]
+useDefault = true
+[allowlist]
+description = "caches and dependencies, not secrets written by people"
+paths = ['(^|/)node_modules/', '(^|/)\.npm/', '(^|/)\.cache/', '(^|/)\.git/', '(^|/)site-packages/', '(^|/)\.venv/', '(^|/)venv/', '(^|/)\.cargo/', '(^|/)\.rustup/', '(^|/)\.nvm/', '(^|/)\.gradle/', '(^|/)\.m2/', '(^|/)Android/Sdk/', '(^|/)\.local/share/', '(^|/)\.ollama/']
+TOML
   for r in $ROOTS; do
     [ -d "$r" ] || continue
     n=$((n+1))
-    timeout 1200 "$G" dir "$r" --redact --no-banner --exit-code 0 --max-target-megabytes 2 \
+    timeout "${GITLEAKS_TIMEOUT:-1800}" "$G" dir "$r" --config "$OUT/gitleaks.toml" --redact --no-banner --exit-code 0 --max-target-megabytes 2 \
       --report-format json --report-path "$OUT/gitleaks-$n.json" >/dev/null 2>>"$OUT/gitleaks.txt"
+    rc=$?
+    # a root cut short or failed is not covered: say so, never count it as clean
+    { [ $rc -eq 0 ] && [ -f "$OUT/gitleaks-$n.json" ]; } || missed="$missed $r(exit $rc)"
   done
+  [ -n "$missed" ] && f X-GITLEAKS-COVER warn medium tools "Gitleaks did not finish on some folders: they were not searched" "$missed (time limit GITLEAKS_TIMEOUT=${GITLEAKS_TIMEOUT:-1800}s)"
   local s; s=$(python3 -I - "$OUT"/gitleaks-*.json <<'PY'
 import json,sys,collections
 files=collections.Counter(); rules=collections.Counter()
@@ -138,6 +151,7 @@ PY
 )
   local nf nl rest; read -r nf nl rest <<<"$s"
   if [ "${nf:-0}" -gt 0 ]; then f X-GITLEAKS fail high tools "Gitleaks: secrets written in files under $ROOTS (values redacted)" "$nl findings in $nf files; rules: $rest"
+  elif [ -n "$missed" ]; then f X-GITLEAKS skip info tools "Gitleaks: no secret found in the folders it finished (see X-GITLEAKS-COVER)" ""
   else f X-GITLEAKS pass info tools "Gitleaks: no secret found in files under $ROOTS" ""; fi
 }
 

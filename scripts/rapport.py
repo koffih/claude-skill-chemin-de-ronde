@@ -61,6 +61,7 @@ FIX = {
     "D03": "Find what grows (du -xh --max-depth=2 /), clean caches and logs, and add log rotation.",
     "D04": "For identity documents and other sensitive files, encrypt at the application level with a key that does not live on this disk.",
     "T-ROOTFS": "apt upgrade for system packages; update the listed language packages in their project and redeploy.",
+    "X-GITLEAKS-COVER": "Run gitleaks again on that folder alone with more time (GITLEAKS_TIMEOUT=3600 sudo bash outils.sh run --only gitleaks --roots <folder> --out DIR), or narrow --roots; until then the folder counts as not searched.",
     "X-GITLEAKS": "Open the raw gitleaks report in the round folder, rotate each real secret, then move it out of the files (env file mode 600, sops, a vault).",
 }
 GRADES = [(90, "Citadel"), (75, "Stronghold"), (50, "Cracked walls"), (0, "Open breach")]
